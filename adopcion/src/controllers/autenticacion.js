@@ -3,8 +3,8 @@ import  Jwt  from "jsonwebtoken";
 
 export const validar = async (req, res) => {
     try {
-        let { email, password } = req.body;
-        let sql = `SELECT * from usuarios where email='${email}' and password='${password}'`;
+        let { correo, password } = req.body;
+        let sql = `SELECT * from usuarios where correo='${correo}' and password='${password}'`;
 
         const [rows] = await pool.query(sql)
         if (rows.length > 0) {

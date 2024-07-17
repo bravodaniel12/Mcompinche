@@ -17,7 +17,6 @@ export const cartaMascotas = async (req, res) => {
     }
 };
 
-
 export const RegistrarM = async (req, res) => {
     try {
         // Verificar errores de validación
@@ -26,14 +25,12 @@ export const RegistrarM = async (req, res) => {
             return res.status(400).json({ errors: errors.array() });
         }
 
-        // Obtener la identificación del administrador desde el token
+        // Obtener la identificación del usuario desde el token
         const adminId = req.usuario;
 
         if (!adminId) {
-            return res.status(403).json({ message: 'No se proporcionó la identificación del administrador en el token' });
+            return res.status(403).json({ message: 'No se proporcionó la identificación del usuario en el token' });
         }
-
-        console.log('Admin ID:', adminId); // Debugging para verificar que adminId tiene el valor correcto
 
         // Manejar la carga de archivos
         upload.array('fotos', 4)(req, res, async function (err) {
@@ -84,7 +81,8 @@ export const RegistrarM = async (req, res) => {
     }
 };
 
-export const obtenerMascotas = async (req, res) => {
+
+export const listarMascotas = async (req, res) => {
     try {
         const [mascotas] = await pool.query(`
             SELECT m.foto_principal AS fotoM, 
@@ -154,35 +152,40 @@ export const actualizarMascota = async (req, res) => {
 };
 
 
-export const eliminarMascota = async (req, res) => {
+
+export const EstadoMascota = async (req, res) => {
     const { id } = req.params;
-    const adminId = req.usuario;
+    const adminId = req.usuario; // Obtener la identificación del usuario desde el token
 
     try {
+        // Verificar si la mascota existe
         const [mascotaExistente] = await pool.query("SELECT * FROM mascotas WHERE id_mascota = ?", [id]);
 
         if (mascotaExistente.length === 0) {
             return res.status(404).json({ mensaje: 'Mascota no encontrada' });
         }
 
+        // Verificar si el usuario tiene permiso para cambiar el estado
         if (mascotaExistente[0].admin_id !== adminId) {
-            return res.status(403).json({ mensaje: 'No tienes permiso para eliminar esta mascota' });
+            return res.status(403).json({ mensaje: 'No tienes permiso para cambiar el estado de esta mascota' });
         }
 
-        await pool.query("DELETE FROM mascotas WHERE id_mascota = ?", [id]);
+        // Cambiar el estado de la mascota a "en proceso"
+        await pool.query("UPDATE mascotas SET estado = ? WHERE id_mascota = ?", ['en proceso', id]);
 
-        res.status(200).json({ mensaje: 'Mascota eliminada con éxito' });
+        res.status(200).json({ mensaje: 'Estado de la mascota actualizado a en proceso con éxito' });
     } catch (error) {
-        console.error('Error al eliminar la mascota:', error);
+        console.error('Error al cambiar el estado de la mascota:', error);
         res.status(500).json({ mensaje: 'Error interno del servidor' });
     }
 };
+
 
 export const obtenerFotosDeMascota = async (req, res) => {
     const { id_mascota } = req.params;
 
     try {
-        const [fotos] = await pool.query("SELECT * FROM fotosmascota WHERE fk_id_mascota = ?", [id_mascota]);
+        const [fotos] = await pool.query("SELECT * FROM fotosmascotas WHERE fk_id_mascota = ?", [id_mascota]);
 
         if (fotos.length === 0) {
             return res.status(404).json({ mensaje: 'No se encontraron fotos para esta mascota' });
@@ -194,6 +197,7 @@ export const obtenerFotosDeMascota = async (req, res) => {
         res.status(500).json({ mensaje: 'Error interno del servidor' });
     }
 };
+
 
 export const buscarmasco = async (req, res) => {
     const { id_mascota } = req.params;
