@@ -16,7 +16,7 @@ export const validar = async (req, res) => {
 
             if (match) {
                 // Incluir la identificación del usuario en el token JWT
-                let token = Jwt.sign({ user: user.identificacion }, process.env.AUT_SECRET, { expiresIn: process.env.AUT_EXPIRE });
+                let token = Jwt.sign({ user: user.identificacion },"secretosuperlargo12345", { expiresIn: "2h" });
                 return res.status(200).json({ 'user': user, 'token': token, message: 'Token generado con éxito' });
             } else {
                 return res.status(404).json({ "message": "Contraseña incorrecta" });
@@ -39,7 +39,7 @@ export const validarToken = async (req, res, next) => {
         if (!tokenClient) {
             return res.status(403).json({ message: 'Token es requerido' });
         } else {
-            Jwt.verify(tokenClient, process.env.AUT_SECRET, (error, decoded) => {
+            Jwt.verify(tokenClient, "secretosuperlargo12345", (error, decoded) => {
                 if (error) {
                     return res.status(403).json({ message: 'Token es inválido o ha expirado' });
                 } else {
