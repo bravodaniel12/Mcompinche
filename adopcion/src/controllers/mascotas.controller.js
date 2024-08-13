@@ -1,21 +1,78 @@
 import {pool} from '../database/conexion.js'
 import { validationResult } from "express-validator"
 import upload from './carga.Img.js';
+import { format } from 'date-fns';
 
 export const cartaMascotas = async (req, res) => {
     try {
         const [mascotas] = await pool.query(`
-            SELECT g.nombre AS genero, m.nombre AS nombreM, m.foto_principal AS foto
+            SELECT m.*, m.fk_id_genero AS genero, m.nombre AS nombreM, m.foto_principal AS foto, m.id_mascota AS id_mascota, m.descripcion AS descripcion, m.fk_id_raza AS raza, m.fk_id_categoria AS categoria, m.estado AS estado 
             FROM mascotas m
-            JOIN generos g ON m.fk_id_genero = g.id_genero
             JOIN usuarios u ON m.admin_id = u.identificacion
         `);
-        res.status(200).json(mascotas);
+
+        // Formatea la fecha de publicación
+        const formattedMascotas = mascotas.map(mascota => ({
+            ...mascota,
+            fecha_publicado: format(new Date(mascota.fecha_publicado), 'yyyy-MM-dd') // Ajusta el formato según tus necesidades
+        }));
+
+        res.status(200).json(formattedMascotas);
     } catch (error) {
         console.error('Error al obtener las mascotas:', error);
         res.status(500).json({ mensaje: 'Error interno del servidor' });
     }
 };
+
+export const listarMascotas = async (req, res) => {
+    try {
+        const [mascotas] = await pool.query(`
+            SELECT 
+                m.foto_principal AS foto,
+                m.id_mascota AS id_mascota,
+                m.nombre AS nombreM, 
+                m.fk_id_genero AS genero, 
+                m.descripcion AS descripcion, 
+                m.fk_id_raza AS raza, 
+                m.fk_id_categoria AS categoria, 
+                u.nombre AS usuario_nombre, 
+                m.fecha_publicado AS f_publicacion,
+                m.desparacitado,
+                m.esterilizado,
+                m.enfermedad,
+                m.discapacidad,
+                m.vacuna_rabia,
+                m.vacuna_parvovirus,
+                m.vacuna_moquillo,
+                m.vacuna_leucemia_felina,
+                m.vacuna_calicivirus,
+                m.vacuna_herpesvirus
+            FROM mascotas m
+            JOIN usuarios u ON m.admin_id = u.identificacion
+        `);
+
+        // Formatear las propiedades booleanas
+        const formattedMascotas = mascotas.map(mascota => ({
+            ...mascota,
+            desparacitado: mascota.desparacitado === 1 ? 'si' : 'no',
+            esterilizado: mascota.esterilizado === 1 ? 'si' : 'no',
+            enfermedad: mascota.enfermedad === 1 ? 'si' : 'no',
+            discapacidad: mascota.discapacidad === 1 ? 'si' : 'no',
+            vacuna_rabia: mascota.vacuna_rabia === 1 ? 'si' : 'no',
+            vacuna_parvovirus: mascota.vacuna_parvovirus === 1 ? 'si' : 'no',
+            vacuna_moquillo: mascota.vacuna_moquillo === 1 ? 'si' : 'no',
+            vacuna_leucemia_felina: mascota.vacuna_leucemia_felina === 1 ? 'si' : 'no',
+            vacuna_calicivirus: mascota.vacuna_calicivirus === 1 ? 'si' : 'no',
+            vacuna_herpesvirus: mascota.vacuna_herpesvirus === 1 ? 'si' : 'no'
+        }));
+
+        res.status(200).json(formattedMascotas);
+    } catch (error) {
+        console.error('Error al obtener las mascotas:', error);
+        res.status(500).json({ mensaje: 'Error interno del servidor' });
+    }
+};
+
 
 export const RegistrarM = async (req, res) => {
     try {
@@ -32,59 +89,30 @@ export const RegistrarM = async (req, res) => {
 
         console.log('Admin ID:', adminId);
 
-        upload.array('fotos', 4)(req, res, async function (err) {
+        upload.single('foto_principal')(req, res, async function (err) {
             if (err) {
-                console.error('Error al cargar las imágenes:', err);
-                return res.status(500).json({ message: 'Error al cargar las imágenes' });
+                console.error('Error al cargar la imagen:', err);
+                return res.status(500).json({ message: 'Error al cargar la imagen' });
             }
 
             const {
                 nombre, descripcion, fk_id_raza, fk_id_categoria, fk_id_genero,
-                desparasitado, esterilizado, enfermedad, discapacidad,
+                desparacitado, esterilizado, enfermedad, discapacidad,
                 vacuna_rabia, vacuna_parvovirus, vacuna_moquillo, vacuna_leucemia_felina,
                 vacuna_calicivirus, vacuna_herpesvirus
             } = req.body;
 
-            if (!nombre || !fk_id_raza || !fk_id_genero || !fk_id_categoria) {
-                return res.status(400).json({ mensaje: "Los campos nombre, fk_id_raza, fk_id_categoria y fk_id_genero son obligatorios" });
+            if (!nombre || !fk_id_raza || !fk_id_genero || !fk_id_categoria || !req.file) {
+                return res.status(400).json({ mensaje: "Los campos nombre, fk_id_raza, fk_id_categoria, fk_id_genero y foto_principal son obligatorios" });
             }
 
-            // Validar las vacunas en función del tipo de raza
-            const [raza] = await pool.query("SELECT tipo FROM razas WHERE id_raza = ?", [fk_id_raza]);
-
-            if (raza.length === 0) {
-                return res.status(400).json({ mensaje: "La raza seleccionada no es válida" });
-            }
-
-            const tipoRaza = raza[0].tipo;
-
-            if (tipoRaza === 'perro') {
-                if ( vacuna_parvovirus|| vacuna_moquillo  ||vacuna_rabia ) {
-                    return res.status(400).json({ mensaje: "Solo se pueden registrar vacunas de perro para esta raza" });
-                }
-            } else if (tipoRaza === 'gato') {
-                if ( vacuna_calicivirus || vacuna_herpesvirus || vacuna_rabia || vacuna_leucemia_felina) {
-                    return res.status(400).json({ mensaje: "Solo se pueden registrar vacunas de gato para esta raza" });
-                }
-            }
-
-            let fotoPrincipal = req.files.length > 0 ? req.files[0].filename : null;
+            const fotoPrincipal = req.file.filename;
 
             try {
-                const [resultado] = await pool.query(
-                    "INSERT INTO mascotas (nombre, descripcion, foto_principal, fk_id_raza, fk_id_categoria, fk_id_genero, admin_id, fecha_publicado, estado, desparasitado, esterilizado, enfermedad, discapacidad, vacuna_rabia, vacuna_parvovirus, vacuna_moquillo, vacuna_leucemia_felina, vacuna_calicivirus, vacuna_herpesvirus) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'en adopcion', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [nombre, descripcion, fotoPrincipal, fk_id_raza, fk_id_categoria, fk_id_genero, adminId, desparasitado, esterilizado, enfermedad, discapacidad, vacuna_rabia, vacuna_parvovirus, vacuna_moquillo, vacuna_leucemia_felina, vacuna_calicivirus, vacuna_herpesvirus]
+                await pool.query(
+                    "INSERT INTO mascotas (nombre, descripcion, foto_principal, fk_id_raza, fk_id_categoria, fk_id_genero, admin_id, fecha_publicado, estado, desparacitado, esterilizado, enfermedad, discapacidad, vacuna_rabia, vacuna_parvovirus, vacuna_moquillo, vacuna_leucemia_felina, vacuna_calicivirus, vacuna_herpesvirus) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'en adopcion', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [nombre, descripcion, fotoPrincipal, fk_id_raza, fk_id_categoria, fk_id_genero, adminId, desparacitado, esterilizado, enfermedad, discapacidad, vacuna_rabia, vacuna_parvovirus, vacuna_moquillo, vacuna_leucemia_felina, vacuna_calicivirus, vacuna_herpesvirus]
                 );
-
-                const mascotaId = resultado.insertId;
-
-                if (req.files.length > 1) {
-                    const fotos = req.files.slice(1).map(file => [mascotaId, file.filename]);
-                    await pool.query(
-                        "INSERT INTO fotosmascotas (fk_id_mascota, ruta_foto) VALUES ?",
-                        [fotos]
-                    );
-                }
 
                 return res.status(200).json({ mensaje: "Mascota registrada con éxito" });
             } catch (dbError) {
@@ -98,189 +126,463 @@ export const RegistrarM = async (req, res) => {
     }
 };
 
-
-export const listarMascotas = async (req, res) => {
+export const ActualizarM = async (req, res) => {
     try {
-        const [mascotas] = await pool.query(`
-            SELECT 
-                m.foto_principal AS fotoM, 
-                m.nombre AS nombreMa, 
-                g.nombre AS genero, 
-                m.descripcion AS descripcion, 
-                r.nombre AS raza, 
-                c.nombre AS categoria, 
-                u.nombre AS usuario_nombre, 
-                m.fecha_publicado AS f_publicacion,
-                m.desparasitado,
-                m.esterilizado,
-                m.enfermedad,
-                m.discapacidad,
-                m.vacuna_rabia,
-                m.vacuna_parvovirus,
-                m.vacuna_moquillo,
-                m.vacuna_leucemia_felina,
-                m.vacuna_calicivirus,
-                m.vacuna_herpesvirus
-            FROM mascotas m
-            JOIN razas r ON m.fk_id_raza = r.id_raza
-            JOIN categorias c ON m.fk_id_categoria = c.id_categoria
-            JOIN generos g ON m.fk_id_genero = g.id_genero
-            JOIN usuarios u ON m.admin_id = u.identificacion
-        `);
-        res.status(200).json(mascotas);
-    } catch (error) {
-        console.error('Error al obtener las mascotas:', error);
-        res.status(500).json({ mensaje: 'Error interno del servidor' });
-    }
-};
-
-
-
-
-export const actualizarMascota = async (req, res) => {
-    const { id } = req.params;
-    const {
-        nombre, descripcion, fk_id_raza, fk_id_categoria, fk_id_genero, 
-        desparasitado, esterilizado, enfermedad, discapacidad,
-        vacuna_rabia, vacuna_parvovirus, vacuna_moquillo, vacuna_leucemia_felina,
-        vacuna_calicivirus, vacuna_herpesvirus
-    } = req.body;
-    const adminId = req.usuario;
-
-    try {
-        const [mascotaExistente] = await pool.query("SELECT * FROM mascotas WHERE id_mascota = ?", [id]);
-
-        if (mascotaExistente.length === 0) {
-            return res.status(404).json({ mensaje: 'Mascota no encontrada' });
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        if (mascotaExistente[0].admin_id !== adminId) {
-            return res.status(403).json({ mensaje: 'No tienes permiso para actualizar esta mascota' });
+        const adminId = req.usuario;
+
+        if (!adminId) {
+            return res.status(403).json({ message: 'No se proporcionó la identificación del administrador en el token' });
         }
 
-        // Validar las vacunas en función del tipo de raza
-        const [raza] = await pool.query("SELECT tipo FROM razas WHERE id_raza = ?", [fk_id_raza]);
+        console.log('Admin ID:', adminId);
 
-        if (raza.length === 0) {
-            return res.status(400).json({ mensaje: "La raza seleccionada no es válida" });
-        }
-
-        const tipoRaza = raza[0].tipo;
-
-        if (tipoRaza === 'perro') {
-            if (vacuna_calicivirus || vacuna_herpesvirus || vacuna_leucemia_felina) {
-                return res.status(400).json({ mensaje: "Solo se pueden registrar vacunas de perro para esta raza" });
+        upload.single('foto_principal')(req, res, async function (err) {
+            if (err) {
+                console.error('Error al cargar la imagen:', err);
+                return res.status(500).json({ message: 'Error al cargar la imagen' });
             }
-        } else if (tipoRaza === 'gato') {
-            if (vacuna_parvovirus || vacuna_moquillo) {
-                return res.status(400).json({ mensaje: "Solo se pueden registrar vacunas de gato para esta raza" });
+
+            const {
+                nombre, descripcion, fk_id_raza, fk_id_categoria, fk_id_genero,
+                desparacitado, esterilizado, enfermedad, discapacidad,
+                vacuna_rabia, vacuna_parvovirus, vacuna_moquillo, vacuna_leucemia_felina,
+                vacuna_calicivirus, vacuna_herpesvirus
+            } = req.body;
+
+            const { id_mascota } = req.params;
+
+            if (!id_mascota || (!nombre && !descripcion && !fk_id_raza && !fk_id_categoria && !fk_id_genero && !req.file)) {
+                return res.status(400).json({ mensaje: "Debe proporcionar al menos uno de los campos para actualizar" });
             }
-        }
 
-        const updatedMascota = {
-            nombre: nombre || mascotaExistente[0].nombre,
-            descripcion: descripcion || mascotaExistente[0].descripcion,
-            fk_id_raza: fk_id_raza || mascotaExistente[0].fk_id_raza,
-            fk_id_categoria: fk_id_categoria || mascotaExistente[0].fk_id_categoria,
-            fk_id_genero: fk_id_genero || mascotaExistente[0].fk_id_genero,
-            desparasitado: desparasitado !== undefined ? desparasitado : mascotaExistente[0].desparasitado,
-            esterilizado: esterilizado !== undefined ? esterilizado : mascotaExistente[0].esterilizado,
-            enfermedad: enfermedad || mascotaExistente[0].enfermedad,
-            discapacidad: discapacidad || mascotaExistente[0].discapacidad,
-            vacuna_rabia: vacuna_rabia !== undefined ? vacuna_rabia : mascotaExistente[0].vacuna_rabia,
-            vacuna_parvovirus: vacuna_parvovirus !== undefined ? vacuna_parvovirus : mascotaExistente[0].vacuna_parvovirus,
-            vacuna_moquillo: vacuna_moquillo !== undefined ? vacuna_moquillo : mascotaExistente[0].vacuna_moquillo,
-            vacuna_leucemia_felina: vacuna_leucemia_felina !== undefined ? vacuna_leucemia_felina : mascotaExistente[0].vacuna_leucemia_felina,
-            vacuna_calicivirus: vacuna_calicivirus !== undefined ? vacuna_calicivirus : mascotaExistente[0].vacuna_calicivirus,
-            vacuna_herpesvirus: vacuna_herpesvirus !== undefined ? vacuna_herpesvirus : mascotaExistente[0].vacuna_herpesvirus
-        };
+            const [mascota] = await pool.query("SELECT * FROM mascotas WHERE id_mascota = ?", [id_mascota]);
 
-        await pool.query(
-            "UPDATE mascotas SET nombre = ?, descripcion = ?, fk_id_raza = ?, fk_id_categoria = ?, fk_id_genero = ?, desparasitado = ?, esterilizado = ?, enfermedad = ?, discapacidad = ?, vacuna_rabia = ?, vacuna_parvovirus = ?, vacuna_moquillo = ?, vacuna_leucemia_felina = ?, vacuna_calicivirus = ?, vacuna_herpesvirus = ? WHERE id_mascota = ?",
-            [
-                updatedMascota.nombre, updatedMascota.descripcion, updatedMascota.fk_id_raza, updatedMascota.fk_id_categoria, updatedMascota.fk_id_genero,
-                updatedMascota.desparasitado, updatedMascota.esterilizado, updatedMascota.enfermedad, updatedMascota.discapacidad,
-                updatedMascota.vacuna_rabia, updatedMascota.vacuna_parvovirus, updatedMascota.vacuna_moquillo, updatedMascota.vacuna_leucemia_felina,
-                updatedMascota.vacuna_calicivirus, updatedMascota.vacuna_herpesvirus, id
-            ]
-        );
+            if (mascota.length === 0) {
+                return res.status(404).json({ mensaje: "Mascota no encontrada" });
+            }
 
-        res.status(200).json({ mensaje: 'Mascota actualizada con éxito' });
+            let fotoPrincipal = req.file ? req.file.filename : mascota[0].foto_principal;
+
+            try {
+                await pool.query(
+                    `UPDATE mascotas SET
+                    nombre = COALESCE(?, nombre), descripcion = COALESCE(?, descripcion), foto_principal = COALESCE(?, foto_principal),
+                    fk_id_raza = COALESCE(?, fk_id_raza), fk_id_categoria = COALESCE(?, fk_id_categoria), fk_id_genero = COALESCE(?, fk_id_genero),
+                    admin_id = COALESCE(?, admin_id), desparacitado = COALESCE(?, desparacitado), esterilizado = COALESCE(?, esterilizado),
+                    enfermedad = COALESCE(?, enfermedad), discapacidad = COALESCE(?, discapacidad),
+                    vacuna_rabia = COALESCE(?, vacuna_rabia), vacuna_parvovirus = COALESCE(?, vacuna_parvovirus),
+                    vacuna_moquillo = COALESCE(?, vacuna_moquillo), vacuna_leucemia_felina = COALESCE(?, vacuna_leucemia_felina),
+                    vacuna_calicivirus = COALESCE(?, vacuna_calicivirus), vacuna_herpesvirus = COALESCE(?, vacuna_herpesvirus)
+                    WHERE id_mascota = ?`,
+                    [nombre, descripcion, fotoPrincipal, fk_id_raza, fk_id_categoria, fk_id_genero, adminId,
+                     desparacitado, esterilizado, enfermedad, discapacidad, vacuna_rabia, vacuna_parvovirus, vacuna_moquillo,
+                     vacuna_leucemia_felina, vacuna_calicivirus, vacuna_herpesvirus, id_mascota]
+                );
+
+                return res.status(200).json({ mensaje: "Mascota actualizada con éxito" });
+            } catch (dbError) {
+                console.error('Error al actualizar la mascota en la base de datos:', dbError);
+                return res.status(500).json({ mensaje: 'Error interno del servidor' });
+            }
+        });
     } catch (error) {
         console.error('Error al actualizar la mascota:', error);
-        res.status(500).json({ mensaje: 'Error interno del servidor' });
+        return res.status(500).json({ mensaje: 'Error interno del servidor' });
     }
 };
 
+// controlador para listar mascotas con usuarios asociados
+export const listarMascotasConUsuarios = async (req, res) => {
+    try {
+        const [mascotasResult] = await pool.query(
+            `SELECT 
+                m.*,u.*, m.id_mascota, m.nombre AS mascota, m.fecha_publicado, m.fecha_adoptado AS fecha_adoptadi, m.estado, m.foto_principal,
+                u.identificacion, u.nombre AS nombre, u.apellido, u.email, u.telefono, u.foto
+            FROM 
+                mascotas m
+            LEFT JOIN 
+                adopciones a ON m.id_mascota = a.fk_id_mascota
+            LEFT JOIN 
+                usuarios u ON a.fk_identificacion = u.identificacion
+            WHERE 
+                m.estado IN ('en proceso','adoptadas')`
+        );
 
+        if (mascotasResult.length === 0) {
+            return res.status(404).json({
+                status: 404,
+                message: 'No se encontraron mascotas en proceso de adopción o adoptadas'
+            });
+        }
 
-
-export const EstadoMascota = async (req, res) => {
-    const { id } = req.params;
-    const adminId = req.usuario; // Obtener la identificación del usuario desde el token
+        res.status(200).json(mascotasResult);
+    } catch (error) {
+        res.status(500).json({
+            status: 500,
+            message: 'Error en el sistema: ' + error.message
+        });
+    }
+};
+// Cambio de estado de la mascota a "en proceso" y registrar la adopción
+export const iniciarAdopcion = async (req, res) => {
+    const { id_mascota } = req.params; // Leer id_mascota de los parámetros de la URL
+    const adminId = req.usuario; // Obtener identificacion desde req.usuario
 
     try {
         // Verificar si la mascota existe
-        const [mascotaExistente] = await pool.query("SELECT * FROM mascotas WHERE id_mascota = ?", [id]);
+        const [mascota] = await pool.query("SELECT * FROM mascotas WHERE id_mascota = ?", [id_mascota]);
 
-        if (mascotaExistente.length === 0) {
+        if (mascota.length === 0) {
             return res.status(404).json({ mensaje: 'Mascota no encontrada' });
         }
 
-        // Verificar si el usuario tiene permiso para cambiar el estado
-        if (mascotaExistente[0].admin_id !== adminId) {
-            return res.status(403).json({ mensaje: 'No tienes permiso para cambiar el estado de esta mascota' });
+        // Verificar si la mascota ya está en proceso de adopción
+        const [adopcionExistente] = await pool.query(
+            'SELECT * FROM adopciones WHERE fk_id_mascota = ? AND fk_identificacion = ?',
+            [id_mascota, adminId]
+        );
+
+        if (adopcionExistente.length > 0) {
+            return res.status(400).json({ mensaje: 'La mascota ya está en proceso de adopción' });
         }
+
+        // Iniciar la transacción
+        await pool.query("START TRANSACTION");
 
         // Cambiar el estado de la mascota a "en proceso"
-        await pool.query("UPDATE mascotas SET estado = ? WHERE id_mascota = ?", ['en proceso', id]);
+        await pool.query(
+            "UPDATE mascotas SET estado = 'en proceso' WHERE id_mascota = ?",
+            [id_mascota]
+        );
 
-        res.status(200).json({ mensaje: 'Estado de la mascota actualizado a en proceso con éxito' });
+        // Registrar la adopción en la tabla adopciones
+        await pool.query(
+            "INSERT INTO adopciones (fk_id_mascota, fk_identificacion) VALUES (?, ?)",
+            [id_mascota, adminId]
+        );
+
+        // Confirmar la transacción
+        await pool.query("COMMIT");
+
+        res.status(201).json({ mensaje: 'Mascota en proceso de adopción' });
     } catch (error) {
-        console.error('Error al cambiar el estado de la mascota:', error);
+        // Revertir la transacción en caso de error
+        await pool.query("ROLLBACK");
+
+        console.error('Error al iniciar adopción:', error);
         res.status(500).json({ mensaje: 'Error interno del servidor' });
     }
 };
 
 
-export const obtenerFotosDeMascota = async (req, res) => {
-    const { id_mascota } = req.params;
 
+/* // cambio de estado de la mascota a en proceso
+export const iniciarAdopcion = async (req, res) => {
+    const connection = await pool.getConnection();
     try {
-        const [fotos] = await pool.query("SELECT * FROM fotosmascotas WHERE fk_id_mascota = ?", [id_mascota]);
-
-        if (fotos.length === 0) {
-            return res.status(404).json({ mensaje: 'No se encontraron fotos para esta mascota' });
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        res.status(200).json(fotos);
+        const { id_mascota } = req.params;
+        const { identificacion } = req.usuario; // Usar ID del usuario desde el token
+
+        // Iniciar transacción
+        await connection.beginTransaction();
+
+        // Verificar si la mascota existe
+        const [mascota] = await connection.query("SELECT * FROM mascotas WHERE id_mascota = ?", [id_mascota]);
+
+        if (mascota.length > 0) {
+            // Verificar si la mascota ya está registrada en la tabla adopciones
+            const [adopcionExistente] = await connection.query("SELECT * FROM adopciones WHERE fk_id_mascota = ?", [id_mascota]);
+
+            if (adopcionExistente.length > 0) {
+                // La mascota ya está registrada en la tabla adopciones
+                await connection.rollback();
+                return res.status(400).json({
+                    status: 400,
+                    message: 'La mascota ya está registrada en la tabla adopciones'
+                });
+            }
+
+            // Cambiar el estado a "en proceso"
+            const [result] = await connection.query("UPDATE mascotas SET estado = 'en proceso' WHERE id_mascota = ?", [id_mascota]);
+
+            if (result.affectedRows > 0) {
+                // Registrar en la tabla adopciones
+                const [adopcionResult] = await connection.query("INSERT INTO adopciones (fk_identificacion, fk_id_mascota) VALUES (?, ?)", [identificacion, id_mascota]);
+                await connection.commit();
+                res.status(200).json({
+                    status: 200,
+                    message: 'Estado de la mascota cambiado a en proceso y adopción registrada'
+                });
+            } else {
+                await connection.rollback();
+                res.status(404).json({
+                    status: 404,
+                    message: 'No se pudo actualizar el estado de la mascota'
+                });
+            }
+        } else {
+            await connection.rollback();
+            res.status(404).json({
+                status: 404,
+                message: 'No se encontró la mascota'
+            });
+        }
     } catch (error) {
-        console.error('Error al obtener las fotos de la mascota:', error);
-        res.status(500).json({ mensaje: 'Error interno del servidor' });
+        await connection.rollback();
+        res.status(500).json({
+            status: 500,
+            message: 'Error en el sistema: ' + error.message
+        });
+    } finally {
+        connection.release();
     }
-};
+}; */
 
 
-export const buscarmasco = async (req, res) => {
-    const { id_mascota } = req.params;
+/* // cambio de estado a adoptado o denegado
+export const administrarAdopcion = async (req, res) => {
     try {
-        const [mascotas] = await pool.query(`
-            SELECT m.*, r.nombre AS raza, c.nombre AS categoria, g.nombre AS genero, u.nombre AS usuario_nombre
-            FROM mascotas m
-            JOIN razas r ON m.fk_id_raza = r.id_raza
-            JOIN categorias c ON m.fk_id_categoria = c.id_categoria
-            JOIN generos g ON m.fk_id_genero = g.id_genero
-            JOIN usuarios u ON m.admin_id = u.identificacion
-            WHERE m.id_mascota = ?
-        `, [id_mascota]);
-
-        if (mascotas.length === 0) {
-            return res.status(404).json({ mensaje: 'Mascota no encontrada' });
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
 
-        res.status(200).json(mascotas[0]);
+        const { id_mascota } = req.params;
+        const { accion } = req.body;
+
+        const [mascotaResult] = await pool.query("SELECT * FROM adopciones.mascotas WHERE id_mascota = ?", [id_mascota]);
+        if (mascotaResult.length === 0) {
+            return res.status(404).json({
+                status: 404,
+                message: 'No se encontró la mascota'
+            });
+        }
+
+        const mascota = mascotaResult[0];
+
+        const [usuarioResult] = await pool.query("SELECT * FROM adopciones.usuarios WHERE identificacion = ?", [mascota.admin_id]);
+        if (usuarioResult.length === 0) {
+            return res.status(404).json({
+                status: 404,
+                message: 'No se encontró el usuario solicitante'
+            });
+        }
+
+        const usuario = usuarioResult[0];
+
+        if (accion === 'aceptar') {
+            const [updateResult] = await pool.query("UPDATE adopciones.mascotas SET estado = 'adoptado', fecha_adoptado = NOW() WHERE id_mascota = ?", [id_mascota]);
+            if (updateResult.affectedRows > 0) {
+                console.log('Datos del adoptante:', usuario);
+                res.status(200).json({
+                    status: 200,
+                    message: 'La adopción ha sido aceptada',
+                    adoptante: usuario
+                });
+            } else {
+                res.status(404).json({
+                    status: 404,
+                    message: 'No se pudo actualizar el estado de la mascota'
+                });
+            }
+        } else if (accion === 'denegar') {
+            const [updateResult] = await pool.query("UPDATE adopciones.mascotas SET estado = 'en adopcion' WHERE id_mascota = ?", [id_mascota]);
+            if (updateResult.affectedRows > 0) {
+                res.status(200).json({
+                    status: 200,
+                    message: 'La adopción fue denegada y la mascota está disponible para adopción nuevamente'
+                });
+            } else {
+                res.status(404).json({
+                    status: 404,
+                    message: 'No se pudo actualizar el estado de la mascota'
+                });
+            }
+        } else {
+            res.status(400).json({
+                status: 400,
+                message: 'Acción no válida'
+            });
+        }
     } catch (error) {
-        console.error('Error al obtener la mascota:', error);
-        res.status(500).json({ mensaje: 'Error interno del servidor' });
+        res.status(500).json({
+            status: 500,
+            message: 'Error en el sistema: ' + error.message
+        });
     }
 };
+ */
+export const administrarAdopcion = async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        const { id_mascota } = req.params;
+        const { accion } = req.body;
+
+        // Verificar si la mascota existe
+        const [mascotaResult] = await pool.query("SELECT * FROM adopciones.mascotas WHERE id_mascota = ?", [id_mascota]);
+        if (mascotaResult.length === 0) {
+            return res.status(404).json({ status: 404, message: 'No se encontró la mascota' });
+        }
+
+        const mascota = mascotaResult[0];
+
+        // Verificar si el usuario solicitante existe
+        const [usuarioResult] = await pool.query("SELECT * FROM adopciones.usuarios WHERE identificacion = ?", [mascota.admin_id]);
+        if (usuarioResult.length === 0) {
+            return res.status(404).json({ status: 404, message: 'No se encontró el usuario solicitante' });
+        }
+
+        const usuario = usuarioResult[0];
+
+        if (accion === 'aceptar') {
+            // Aceptar la adopción
+            const [updateResult] = await pool.query("UPDATE adopciones.mascotas SET estado = 'adoptado', fecha_adoptado = NOW() WHERE id_mascota = ?", [id_mascota]);
+            if (updateResult.affectedRows > 0) {
+                console.log('Datos del adoptante:', usuario);
+                res.status(200).json({ status: 200, message: 'La adopción ha sido aceptada', adoptante: usuario });
+            } else {
+                res.status(404).json({ status: 404, message: 'No se pudo actualizar el estado de la mascota' });
+            }
+        } else if (accion === 'denegar') {
+            // Denegar la adopción y eliminar el registro de la tabla adopciones
+            const [updateResult] = await pool.query("UPDATE adopciones.mascotas SET estado = 'en adopcion' WHERE id_mascota = ?", [id_mascota]);
+            if (updateResult.affectedRows > 0) {
+                const [deleteResult] = await pool.query("DELETE FROM adopciones WHERE fk_id_mascota = ?", [id_mascota]);
+                if (deleteResult.affectedRows > 0) {
+                    res.status(200).json({ status: 200, message: 'La adopción fue denegada, la mascota está disponible para adopción nuevamente y el registro de adopciones ha sido eliminado' });
+                } else {
+                    res.status(404).json({ status: 404, message: 'No se pudo eliminar el registro de adopciones' });
+                }
+            } else {
+                res.status(404).json({ status: 404, message: 'No se pudo actualizar el estado de la mascota' });
+            }
+        } else {
+            res.status(400).json({ status: 400, message: 'Acción no válida' });
+        }
+    } catch (error) {
+        res.status(500).json({ status: 500, message: 'Error en el sistema: ' + error.message });
+    }
+};
+
+
+export const cancelarAdopcion = async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        const { id_mascota } = req.params;
+        const identificacion = req.usuario; // Usar ID del usuario desde el token
+
+        // Verificar si la mascota existe y está en "en proceso"
+        const [mascota] = await pool.query("SELECT * FROM mascotas WHERE id_mascota = ? AND estado = 'en proceso'", [id_mascota]);
+
+        if (mascota.length > 0) {
+            // Cambiar el estado a "en adopción" y eliminar la fecha_adoptado
+            const [result] = await pool.query("UPDATE mascotas SET estado = 'en adopcion', fecha_adoptado = NULL WHERE id_mascota = ?", [id_mascota]);
+            if (result.affectedRows > 0) {
+                // Eliminar el registro en la tabla adopciones
+                const [deleteResult] = await pool.query("DELETE FROM adopciones WHERE fk_identificacion = ? AND fk_id_mascota = ?", [identificacion, id_mascota]);
+                if (deleteResult.affectedRows > 0) {
+                    res.status(200).json({
+                        status: 200,
+                        message: 'Estado de la mascota cambiado a en adopción y registro de adopción eliminado'
+                    });
+                } else {
+                    res.status(404).json({
+                        status: 404,
+                        message: 'No se pudo eliminar el registro de adopción'
+                    });
+                }
+            } else {
+                res.status(404).json({
+                    status: 404,
+                    message: 'No se pudo actualizar el estado de la mascota'
+                });
+            }
+        } else {
+            res.status(404).json({
+                status: 404,
+                message: 'No se encontró la mascota o no está en estado "en proceso"'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            status: 500,
+            message: 'Error en el sistema: ' + error.message
+        });
+    }
+};
+
+
+
+export const eliminarMascota = async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        const { id_mascota } = req.params;
+
+        // Iniciar transacción
+        await connection.beginTransaction();
+
+        // Verificar si la mascota tiene registros en la tabla adopciones
+        const [adopciones] = await connection.query("SELECT * FROM adopciones WHERE fk_id_mascota = ?", [id_mascota]);
+
+        if (adopciones.length > 0) {
+            // La mascota tiene registros en la tabla adopciones, no se puede eliminar
+            await connection.rollback();
+            return res.status(400).json({
+                status: 400,
+                message: 'No se puede eliminar la mascota porque tiene registros en la tabla adopciones.'
+            });
+        }
+
+        // Eliminar registros en la tabla favoritos que hacen referencia a la mascota
+        await connection.query("DELETE FROM favoritos WHERE fk_id_mascota = ?", [id_mascota]);
+
+        // La mascota no tiene registros en la tabla adopciones, proceder con la eliminación
+        const [result] = await connection.query("DELETE FROM mascotas WHERE id_mascota = ?", [id_mascota]);
+        await connection.commit();
+
+        if (result.affectedRows > 0) {
+            res.status(200).json({
+                status: 200,
+                message: `La mascota con ID ${id_mascota} ha sido eliminada con éxito y sus registros en favoritos también han sido eliminados.`
+            });
+        } else {
+            res.status(404).json({
+                status: 404,
+                message: 'Mascota no encontrada.'
+            });
+        }
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({
+            status: 500,
+            message: 'Error en el sistema: ' + error.message
+        });
+    } finally {
+        connection.release();
+    }
+};
+
+

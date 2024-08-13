@@ -22,11 +22,11 @@ const storage = multer.diskStorage({
 
 // Filtro de archivos (opcional)
 const fileFilter = (req, file, cb) => {
-  // Aceptar sólo ciertos tipos de archivos (ej., imágenes)
-  if (file.mimetype.startsWith('image/')) {
+  // Aceptar sólo archivos JPEG
+  if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg') {
     cb(null, true);
   } else {
-    cb(new Error('El archivo debe ser una imagen'), false);
+    cb(new Error('El archivo debe ser una imagen JPEG'), false);
   }
 };
 
@@ -34,7 +34,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 1024 * 1024 * 5 // Limitar el tamaño del archivo a 5MB
+    fileSize: 1024 * 1024 * 30 // Limitar el tamaño del archivo a 5MB
   },
   fileFilter: fileFilter
 });
